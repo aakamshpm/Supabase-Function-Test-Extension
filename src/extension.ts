@@ -7,14 +7,17 @@
 
 import * as vscode from "vscode";
 import { SupabaseTesterPanel } from "./webview/SupabaseTesterPanel";
+import { StorageManager } from "./utils/storage";
 
 export function activate(context: vscode.ExtensionContext) {
   console.log("Supabase Function Tester extension is now active!");
 
+  StorageManager.initialize(context);
+
   const disposable = vscode.commands.registerCommand(
     "supabase-tester.openPanel",
     () => {
-      SupabaseTesterPanel.createOrShow(context.extensionUri);
+      SupabaseTesterPanel.createOrShow(context.extensionUri, context);
     }
   );
 

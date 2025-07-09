@@ -7,10 +7,14 @@ export class SupabaseTesterPanel {
   public static currentPanel: SupabaseTesterPanel | undefined;
   private readonly _panel: vscode.WebviewPanel;
   private readonly _extensionUri: vscode.Uri;
+  private readonly _context: vscode.ExtensionContext;
   private _disposables: vscode.Disposable[] = [];
   private supabaseManager: SupabaseManager;
 
-  public static createOrShow(extensionUri: vscode.Uri) {
+  public static createOrShow(
+    extensionUri: vscode.Uri,
+    context: vscode.ExtensionContext
+  ) {
     const column = vscode.window.activeTextEditor
       ? vscode.window.activeTextEditor.viewColumn
       : undefined;
@@ -32,13 +36,19 @@ export class SupabaseTesterPanel {
 
     SupabaseTesterPanel.currentPanel = new SupabaseTesterPanel(
       panel,
-      extensionUri
+      extensionUri,
+      context
     );
   }
 
-  private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
+  private constructor(
+    panel: vscode.WebviewPanel,
+    extensionUri: vscode.Uri,
+    context: vscode.ExtensionContext
+  ) {
     this._panel = panel;
     this._extensionUri = extensionUri;
+    this._context = context; // Now properly initialized
     this.supabaseManager = new SupabaseManager();
 
     this._update();
@@ -50,71 +60,155 @@ export class SupabaseTesterPanel {
       null,
       this._disposables
     );
+
+    // Load saved configuration on startup
+    this._loadConfigOnStartup();
+  }
+
+  private async _loadConfigOnStartup() {
+    try {
+      const config = StorageManager.getSupabaseConfig();
+      if (config) {
+        this.supabaseManager.initialize(config);
+        this._panel.webview.postMessage({
+          command: "configLoaded",
+          config,
+        });
+      }
+    } catch (error) {
+      console.error("Error loading config on startup:", error);
+    }
   }
 
   private async _handleMessage(message: any) {
-    switch (message.command) {
-      case "saveConfig":
-        await this._saveConfig(message.config);
-        break;
-      case "signIn":
-        await this._signIn(message.auth);
-        break;
-      case "signOut":
-        await this._signOut();
-        break;
-      case "executeFunction":
-        await this._executeFunction(message.code, message.variables);
-        break;
-      case "loadConfig":
-        await this._loadConfig();
-        break;
+    try {
+      switch (message.command) {
+        case "saveConfig":
+          await this._saveConfig(message.config);
+          break;
+        case "signIn":
+          await this._signIn(message.auth);
+          break;
+        case "signOut":
+          await this._signOut();
+          break;
+        case "executeFunction":
+          await this._executeFunction(message.code, message.variables);
+          break;
+        case "loadConfig":
+          await this._loadConfig();
+          break;
+      }
+    } catch (error) {
+      console.error("Error handling message:", error);
+      this._panel.webview.postMessage({
+        command: "error",
+        error: String(error),
+      });
     }
   }
 
   private async _saveConfig(config: SupabaseConfig) {
-    await StorageManager.saveSupabaseConfig(config);
-    this.supabaseManager.initialize(config);
-    this._panel.webview.postMessage({
-      command: "configSaved",
-      success: true,
-    });
+    try {
+      await StorageManager.saveSupabaseConfig(config);
+      this.supabaseManager.initialize(config);
+      this._panel.webview.postMessage({
+        command: "configSaved",
+        success: true,
+      });
+    } catch (error) {
+      console.error("Error saving config:", error);
+      this._panel.webview.postMessage({
+        command: "configSaved",
+        success: false,
+        error: String(error),
+      });
+    }
   }
 
   private async _signIn(auth: UserAuth) {
-    const result = await this.supabaseManager.signIn(auth);
-    this._panel.webview.postMessage({
-      command: "signInResult",
-      result,
-    });
+    try {
+      const result = await this.supabaseManager.signIn(auth);
+      if (result.success) {
+        // Save session info
+        const client = this.supabaseManager.getClient();
+        if (client) {
+          const {
+            data: { session },
+          } = await client.auth.getSession();
+          if (session) {
+            await StorageManager.saveUserSession(session);
+          }
+        }
+      }
+      this._panel.webview.postMessage({
+        command: "signInResult",
+        result,
+      });
+    } catch (error) {
+      console.error("Error signing in:", error);
+      this._panel.webview.postMessage({
+        command: "signInResult",
+        result: { success: false, error: String(error) },
+      });
+    }
   }
 
   private async _signOut() {
-    await this.supabaseManager.signOut();
-    await StorageManager.clearUserSession();
-    this._panel.webview.postMessage({
-      command: "signOutResult",
-      success: true,
-    });
+    try {
+      await this.supabaseManager.signOut();
+      await StorageManager.clearUserSession();
+      this._panel.webview.postMessage({
+        command: "signOutResult",
+        success: true,
+      });
+    } catch (error) {
+      console.error("Error signing out:", error);
+      this._panel.webview.postMessage({
+        command: "signOutResult",
+        success: false,
+        error: String(error),
+      });
+    }
   }
 
   private async _executeFunction(code: string, variables: Record<string, any>) {
-    const result = await this.supabaseManager.executeFunction(code, variables);
-    this._panel.webview.postMessage({
-      command: "functionResult",
-      result,
-    });
+    try {
+      const result = await this.supabaseManager.executeFunction(
+        code,
+        variables
+      );
+      this._panel.webview.postMessage({
+        command: "functionResult",
+        result,
+      });
+    } catch (error) {
+      console.error("Error executing function:", error);
+      this._panel.webview.postMessage({
+        command: "functionResult",
+        result: { success: false, error: String(error) },
+      });
+    }
   }
 
   private async _loadConfig() {
-    const config = StorageManager.getSupabaseConfig();
-    if (config) {
-      this.supabaseManager.initialize(config);
+    try {
+      const config = StorageManager.getSupabaseConfig();
+      if (config) {
+        this.supabaseManager.initialize(config);
+      }
+      this._panel.webview.postMessage({
+        command: "configLoaded",
+        config,
+      });
+    } catch (error) {
+      console.error("Error loading config:", error);
+      this._panel.webview.postMessage({
+        command: "configLoaded",
+        config: null,
+        error: String(error),
+      });
     }
-    this._panel.webview.postMessage({
-      command: "configLoaded",
-      config,
-    });
   }
 
   private _update() {
@@ -160,6 +254,7 @@ export class SupabaseTesterPanel {
             background-color: var(--vscode-input-background);
             color: var(--vscode-input-foreground);
             border-radius: 3px;
+            box-sizing: border-box;
         }
         textarea {
             min-height: 100px;
@@ -177,6 +272,10 @@ export class SupabaseTesterPanel {
         }
         button:hover {
             background-color: var(--vscode-button-hoverBackground);
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
         }
         .status {
             padding: 10px;
@@ -198,9 +297,15 @@ export class SupabaseTesterPanel {
             border-radius: 3px;
             white-space: pre-wrap;
             font-family: var(--vscode-editor-font-family);
+            max-height: 400px;
+            overflow-y: auto;
         }
         .hidden {
             display: none;
+        }
+        .loading {
+            opacity: 0.7;
+            pointer-events: none;
         }
     </style>
 </head>
@@ -217,7 +322,7 @@ export class SupabaseTesterPanel {
             <label for="anonKey">Anon Key:</label>
             <input type="password" id="anonKey" placeholder="Your anon key">
         </div>
-        <button onclick="saveConfig()">Save Configuration</button>
+        <button onclick="saveConfig()" id="saveConfigBtn">Save Configuration</button>
         <div id="configStatus"></div>
     </div>
 
@@ -231,8 +336,8 @@ export class SupabaseTesterPanel {
             <label for="password">Password:</label>
             <input type="password" id="password" placeholder="Your password">
         </div>
-        <button onclick="signIn()">Sign In</button>
-        <button onclick="signOut()">Sign Out</button>
+        <button onclick="signIn()" id="signInBtn">Sign In</button>
+        <button onclick="signOut()" id="signOutBtn">Sign Out</button>
         <div id="authStatus"></div>
     </div>
 
@@ -253,25 +358,35 @@ export class SupabaseTesterPanel {
             <label for="variables">Variables (JSON):</label>
             <textarea id="variables" placeholder='{"userId": 1, "name": "John Doe"}'></textarea>
         </div>
-        <button onclick="executeFunction()">Execute Function</button>
+        <button onclick="executeFunction()" id="executeBtn">Execute Function</button>
         <div id="executionStatus"></div>
         <div id="result" class="result hidden"></div>
     </div>
 
     <script>
         const vscode = acquireVsCodeApi();
+        let isAuthenticated = false;
+        let isConfigured = false;
 
         // Load configuration on startup
-        vscode.postMessage({ command: 'loadConfig' });
+        window.addEventListener('load', () => {
+            vscode.postMessage({ command: 'loadConfig' });
+        });
 
         function saveConfig() {
+            const saveBtn = document.getElementById('saveConfigBtn');
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Saving...';
+            
             const config = {
-                url: document.getElementById('supabaseUrl').value,
-                anonKey: document.getElementById('anonKey').value
+                url: document.getElementById('supabaseUrl').value.trim(),
+                anonKey: document.getElementById('anonKey').value.trim()
             };
             
             if (!config.url || !config.anonKey) {
                 showStatus('configStatus', 'Please fill in all fields', 'error');
+                saveBtn.disabled = false;
+                saveBtn.textContent = 'Save Configuration';
                 return;
             }
             
@@ -279,13 +394,26 @@ export class SupabaseTesterPanel {
         }
 
         function signIn() {
+            const signInBtn = document.getElementById('signInBtn');
+            signInBtn.disabled = true;
+            signInBtn.textContent = 'Signing in...';
+            
             const auth = {
-                email: document.getElementById('email').value,
+                email: document.getElementById('email').value.trim(),
                 password: document.getElementById('password').value
             };
             
             if (!auth.email || !auth.password) {
                 showStatus('authStatus', 'Please fill in all fields', 'error');
+                signInBtn.disabled = false;
+                signInBtn.textContent = 'Sign In';
+                return;
+            }
+            
+            if (!isConfigured) {
+                showStatus('authStatus', 'Please configure Supabase connection first', 'error');
+                signInBtn.disabled = false;
+                signInBtn.textContent = 'Sign In';
                 return;
             }
             
@@ -293,15 +421,32 @@ export class SupabaseTesterPanel {
         }
 
         function signOut() {
+            const signOutBtn = document.getElementById('signOutBtn');
+            signOutBtn.disabled = true;
+            signOutBtn.textContent = 'Signing out...';
+            
             vscode.postMessage({ command: 'signOut' });
         }
 
         function executeFunction() {
-            const code = document.getElementById('functionCode').value;
-            const variablesText = document.getElementById('variables').value;
+            const executeBtn = document.getElementById('executeBtn');
+            executeBtn.disabled = true;
+            executeBtn.textContent = 'Executing...';
+            
+            const code = document.getElementById('functionCode').value.trim();
+            const variablesText = document.getElementById('variables').value.trim();
             
             if (!code) {
                 showStatus('executionStatus', 'Please enter function code', 'error');
+                executeBtn.disabled = false;
+                executeBtn.textContent = 'Execute Function';
+                return;
+            }
+            
+            if (!isConfigured) {
+                showStatus('executionStatus', 'Please configure Supabase connection first', 'error');
+                executeBtn.disabled = false;
+                executeBtn.textContent = 'Execute Function';
                 return;
             }
             
@@ -311,6 +456,8 @@ export class SupabaseTesterPanel {
                     variables = JSON.parse(variablesText);
                 } catch (e) {
                     showStatus('executionStatus', 'Invalid JSON in variables', 'error');
+                    executeBtn.disabled = false;
+                    executeBtn.textContent = 'Execute Function';
                     return;
                 }
             }
@@ -329,29 +476,57 @@ export class SupabaseTesterPanel {
             resultElement.textContent = JSON.stringify(result, null, 2);
         }
 
+        function resetButtons() {
+            document.getElementById('saveConfigBtn').disabled = false;
+            document.getElementById('saveConfigBtn').textContent = 'Save Configuration';
+            document.getElementById('signInBtn').disabled = false;
+            document.getElementById('signInBtn').textContent = 'Sign In';
+            document.getElementById('signOutBtn').disabled = false;
+            document.getElementById('signOutBtn').textContent = 'Sign Out';
+            document.getElementById('executeBtn').disabled = false;
+            document.getElementById('executeBtn').textContent = 'Execute Function';
+        }
+
         // Handle messages from the extension
         window.addEventListener('message', event => {
             const message = event.data;
+            resetButtons();
             
             switch (message.command) {
                 case 'configSaved':
-                    showStatus('configStatus', 'Configuration saved successfully!', 'success');
+                    if (message.success) {
+                        showStatus('configStatus', 'Configuration saved successfully!', 'success');
+                        isConfigured = true;
+                    } else {
+                        showStatus('configStatus', \`Configuration failed: \${message.error}\`, 'error');
+                        isConfigured = false;
+                    }
                     break;
                 case 'configLoaded':
                     if (message.config) {
                         document.getElementById('supabaseUrl').value = message.config.url || '';
                         document.getElementById('anonKey').value = message.config.anonKey || '';
+                        isConfigured = true;
+                    } else {
+                        isConfigured = false;
                     }
                     break;
                 case 'signInResult':
                     if (message.result.success) {
                         showStatus('authStatus', 'Signed in successfully!', 'success');
+                        isAuthenticated = true;
                     } else {
                         showStatus('authStatus', \`Sign in failed: \${message.result.error}\`, 'error');
+                        isAuthenticated = false;
                     }
                     break;
                 case 'signOutResult':
-                    showStatus('authStatus', 'Signed out successfully!', 'success');
+                    if (message.success) {
+                        showStatus('authStatus', 'Signed out successfully!', 'success');
+                        isAuthenticated = false;
+                    } else {
+                        showStatus('authStatus', \`Sign out failed: \${message.error}\`, 'error');
+                    }
                     break;
                 case 'functionResult':
                     if (message.result.success) {
@@ -359,7 +534,11 @@ export class SupabaseTesterPanel {
                         showResult(message.result.data);
                     } else {
                         showStatus('executionStatus', \`Function failed: \${message.result.error}\`, 'error');
+                        document.getElementById('result').classList.add('hidden');
                     }
+                    break;
+                case 'error':
+                    showStatus('executionStatus', \`Extension error: \${message.error}\`, 'error');
                     break;
             }
         });
