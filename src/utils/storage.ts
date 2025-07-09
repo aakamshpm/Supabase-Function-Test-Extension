@@ -12,7 +12,7 @@ export class StorageManager {
     await this.context.globalState.update("supabase-config", config);
   }
 
-  static getSupabaseonfig(): SupabaseConfig | undefined {
+  static getSupabaseConfig(): SupabaseConfig | undefined {
     return this.context.globalState.get<SupabaseConfig>("supabase-config");
   }
 

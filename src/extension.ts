@@ -13,7 +13,9 @@ export function activate(context: vscode.ExtensionContext) {
 
   const disposable = vscode.commands.registerCommand(
     "supabase-tester.openPanel",
-    SupabaseTesterPanel.createOrShow(context.extensionUri)
+    () => {
+      SupabaseTesterPanel.createOrShow(context.extensionUri);
+    }
   );
 
   context.subscriptions.push(disposable);
