@@ -1,0 +1,20 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "type": "npm",
+      "script": "compile",
+      "group": "build",
+      "presentation": {
+        "panel": "dedicated",
+        "reveal": "never"
+      },
+      "problemMatcher": ["$tsc"]
+    }
+  ]
+}
+// This task compiles TypeScript files using the npm script "compile".
+// It is grouped under "build" and uses a dedicated panel for output.
+// The task will not reveal the output panel automatically.
+// The problem matcher "$tsc" is used to identify TypeScript compilation errors.
+// To run this task, you can use the command palette (Ctrl+Shift+P)

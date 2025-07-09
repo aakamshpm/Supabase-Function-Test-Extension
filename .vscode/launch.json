@@ -1,0 +1,22 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}"],
+      "outFiles": ["${workspaceFolder}/out/**/*.js"],
+      "preLaunchTask": "${workspaceFolder}/npm: compile"
+    }
+  ]
+}
+// This configuration is for launching a VS Code extension in development mode.
+// It specifies the extension development path and the output files to watch.
+// The `preLaunchTask` ensures that the TypeScript files are compiled before launching the extension.
+// To run this configuration, you can use the Run and Debug panel in VS Code.
+// The `args` array can be modified to include additional command-line arguments for the extension host.
+// The `outFiles` pattern matches the compiled JavaScript files in the `out` directory of the workspace folder.
+// The `name` field is used to identify this configuration in the Run and Debug panel.
+// The `type` field specifies that this is an extension host configuration.
+// The `request` field indicates that this is a launch request, meaning it will start the extension host process.
